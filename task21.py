@@ -94,14 +94,27 @@ y_valid_21 = []
 for idx, row in train21.iterrows():
     file_name = row.file_name
     century = row.century
+
+    with open(os.path.join(train_path, file_name), 'r') as file:
+        text = file.read()
+    if 'gutenberg' in text.lower():
+        continue
+
     if args.blacklist and idx in blacklist_train:
         continue
+
     X_train_21.append(file_name)
     y_train_21.append(century-1)
 
 for idx, row in valid21.iterrows():
     file_name = row.file_name
     century = row.century
+
+    with open(os.path.join(valid_path, file_name), 'r') as file:
+        text = file.read()
+    if 'gutenberg' in text.lower():
+        continue
+
     if args.blacklist and idx in blacklist_valid:
         continue
     X_valid_21.append(file_name)
@@ -180,28 +193,91 @@ print("Training...")
 optimizer = optim.Adam(model_century_classifier.parameters(), lr=1e-5)
 criterion = nn.CrossEntropyLoss()
 
-EPOCHS = 3
+# Define evaluation function
+def evaluate(model, dataloader, criterion):
+    model.eval()
+    total_loss = 0
+    all_preds = []
+    all_labels = []
+    
+    with torch.no_grad():
+        for text, labels in tqdm(dataloader, desc="Validating"):
+            tokens = tokenizer(text, padding='max_length', truncation=True, 
+                              return_tensors="pt", max_length=512*3).to(device)
+            labels = torch.tensor(labels).to(device)
+            output = model(**tokens)
+            loss = criterion(output.view(-1, 5), labels.view(-1))
+            total_loss += loss.item()
+            
+            preds = torch.argmax(output, dim=1).cpu().numpy()
+            all_preds.extend(preds)
+            all_labels.extend(labels.cpu().numpy())
+    
+    accuracy = (np.array(all_preds) == np.array(all_labels)).mean()
+    mae = mean_avg_error(np.array(all_labels), np.array(all_preds))
+    
+    model.train()
+    return total_loss / len(dataloader), accuracy, mae
+
+# Training with validation-based early stopping
+patience = 3  # Number of epochs to wait for improvement
+max_epochs = 10
+best_val_loss = float('inf')
+best_model_state = None
+epochs_without_improvement = 0
+
 model_century_classifier.train()
 
-# Finetune the model ========================================================================================
-for epoch in range(EPOCHS):
-    for text, labels in tqdm(train_dataloader):
+for epoch in range(max_epochs):
+    # Training phase
+    model_century_classifier.train()
+    train_loss = 0
+    
+    for text, labels in tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{max_epochs}"):
         optimizer.zero_grad()
-        tokens = tokenizer(text, padding='max_length', truncation=True, return_tensors="pt", max_length=512*3,).to(device)
+        tokens = tokenizer(text, padding='max_length', truncation=True, 
+                          return_tensors="pt", max_length=512*3).to(device)
         labels = torch.tensor(labels).to(device)
         output = model_century_classifier(**tokens)
-        #loss = criterion(output, labels)
         loss = criterion(output.view(-1, 5), labels.view(-1))
         loss.backward()
         optimizer.step()
-    print("Epoch:", epoch, "Loss:", loss.item())
+        train_loss += loss.item()
+    
+    avg_train_loss = train_loss / len(train_dataloader)
+    
+    # Validation phase
+    val_loss, val_acc, val_mae = evaluate(model_century_classifier, valid_dataloader, criterion)
+    
+    print(f"Epoch: {epoch+1}, Train Loss: {avg_train_loss:.4f}, "
+          f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, Val MAE: {val_mae:.4f}")
+    
+    # Save best model
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        best_model_state = model_century_classifier.state_dict().copy()
+        epochs_without_improvement = 0
+        print(f"► New best model saved with validation loss: {val_loss:.4f}")
+    else:
+        epochs_without_improvement += 1
+        print(f"► No improvement for {epochs_without_improvement} epochs")
+    
+    # Early stopping
+    if epochs_without_improvement >= patience:
+        print(f"Early stopping triggered after {epoch+1} epochs")
+        break
+
+# Load best model before saving
+if best_model_state is not None:
+    model_century_classifier.load_state_dict(best_model_state)
+    print(f"Loaded best model with validation loss: {best_val_loss:.4f}")
 
 # Save model with configuration info in filename
 model_path = f"models/task21"
 if not os.path.exists(model_path):
     os.makedirs(model_path)
 
-model_filename = f"century_classifier_weights_{EPOCHS}"
+model_filename = f"century_classifier_best_val"
 if args.equal:
     model_filename += "_equal"
 if args.blacklist:
@@ -209,3 +285,4 @@ if args.blacklist:
 model_filename += ".pt"
 
 torch.save(model_century_classifier.state_dict(), os.path.join(model_path, model_filename))
+print(f"Model saved to {os.path.join(model_path, model_filename)}")

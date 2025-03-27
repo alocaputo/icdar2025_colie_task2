@@ -96,6 +96,12 @@ for idx, row in train22.iterrows():
     century = row.century
     if args.exclude_blacklist and idx in blacklist_train:
         continue
+
+    with open(os.path.join(train_path, file_name), 'r') as file:
+        text = file.read()
+    if 'gutenberg' in text.lower():
+        continue
+
     X_train_22.append(file_name)
     y_train_22.append(century-1)
 
@@ -104,6 +110,12 @@ for idx, row in valid22.iterrows():
     century = row.century
     if args.exclude_blacklist and idx in blacklist_valid:
         continue
+
+    with open(os.path.join(valid_path, file_name), 'r') as file:
+        text = file.read()
+    if 'gutenberg' in text.lower():
+        continue
+
     X_valid_22.append(file_name)
     y_valid_22.append(century-1)
     
