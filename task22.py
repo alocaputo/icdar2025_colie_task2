@@ -236,6 +236,8 @@ if not os.path.exists(model_path):
 model_filename = f"decade_classifier_weights_{EPOCHS}"
 if args.exclude_blacklist:
     model_filename += "_blacklist"
+if args.freeze:
+    model_filename += "_frozen"
 model_filename += ".pt"
 
 torch.save(model_decade_classifier.state_dict(), os.path.join(model_path, model_filename))
