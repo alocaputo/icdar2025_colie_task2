@@ -220,6 +220,49 @@ class SingleHeadLongformerModel(nn.Module):
         
         return decade_logits
 
+def mean_avg_error(y_true, y_pred):
+    """Calculate Mean Absolute Error between true and predicted values"""
+    return np.mean(np.abs(y_true - y_pred))
+
+def evaluate_single_head(model, dataloader):
+    model.eval()
+    correct = 0
+    total_predictions = 0
+    preds = []
+    labels_list = []
+    total_loss = 0
+    batch_count = 0
+    criterion = nn.CrossEntropyLoss()
+    
+    with torch.no_grad():
+        for batch in tqdm(dataloader):
+            batch = {k: v.to(device) for k, v in batch.items()}
+            decade_logits = model(
+                input_ids=batch['input_ids'], 
+                attention_mask=batch['attention_mask']
+            )
+            
+            # Calculate loss
+            loss = criterion(decade_logits, batch['decade_labels'])
+            total_loss += loss.item()
+            batch_count += 1
+            
+            # Predictions
+            predictions = torch.argmax(decade_logits, dim=1)
+            labels = batch['decade_labels']
+            correct += (predictions == labels).sum().item()
+            
+            total_predictions += len(predictions)
+            preds.extend(predictions.cpu().numpy())
+            labels_list.extend(labels.cpu().numpy())
+    
+    # Calculate metrics
+    average_loss = total_loss / batch_count if batch_count > 0 else float('inf')
+    accuracy = correct / total_predictions
+    mae = mean_avg_error(np.array(labels_list), np.array(preds))
+    
+    return average_loss, accuracy, mae
+
 def train_single_head_model(model, train_loader, val_loader, epochs=10):
     model_save_dir = 'models/task2x/'
     os.makedirs(model_save_dir, exist_ok=True)
@@ -268,7 +311,7 @@ def train_single_head_model(model, train_loader, val_loader, epochs=10):
                 print(f"Early stopping triggered after {epoch+1} epochs.")
                 break
         
-        print(f"Epoch {epoch+1}: Accuracy = {val_accuracy:.4f}, MAE = {val_mae:.4f}, Val Loss = {val_loss:.4f}")
+        print(f"Epoch {epoch+1}: Accuracy = {val_accuracy:.4f}, Final Rank (MAE)= {val_mae:.4f}, Val Loss  = {val_loss:.4f}")
     
     # Load best model
     if best_model_state is not None:
@@ -277,45 +320,6 @@ def train_single_head_model(model, train_loader, val_loader, epochs=10):
         torch.save(best_model_state, final_model_path)
     
     return model
-
-def evaluate_single_head(model, dataloader):
-    model.eval()
-    correct = 0
-    total_predictions = 0
-    preds = []
-    labels_list = []
-    total_loss = 0
-    batch_count = 0
-    criterion = nn.CrossEntropyLoss()
-    
-    with torch.no_grad():
-        for batch in tqdm(dataloader):
-            batch = {k: v.to(device) for k, v in batch.items()}
-            decade_logits = model(
-                input_ids=batch['input_ids'], 
-                attention_mask=batch['attention_mask']
-            )
-            
-            # Calculate loss
-            loss = criterion(decade_logits, batch['decade_labels'])
-            total_loss += loss.item()
-            batch_count += 1
-            
-            # Predictions
-            predictions = torch.argmax(decade_logits, dim=1)
-            labels = batch['decade_labels']
-            correct += (predictions == labels).sum().item()
-            
-            total_predictions += len(predictions)
-            preds.extend(predictions.cpu().numpy())
-            labels_list.extend(labels.cpu().numpy())
-    
-    # Calculate metrics
-    average_loss = total_loss / batch_count if batch_count > 0 else float('inf')
-    accuracy = correct / total_predictions
-    mae = mean_avg_error(np.array(labels_list), np.array(preds))
-    
-    return average_loss, accuracy, mae
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
