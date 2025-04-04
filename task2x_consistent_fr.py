@@ -200,9 +200,9 @@ batch_size = 16
 train2x_dataloader = DataLoader(train2x, batch_size=batch_size, shuffle=True)
 valid2x_dataloader = DataLoader(valid2x, batch_size=batch_size, shuffle=False)
 
-class MultiTaskLongformerModel(nn.Module):
+class ConsistentMultiTaskLongformerModel(nn.Module):
     def __init__(self):
-        super(MultiTaskLongformerModel, self).__init__()
+        super(ConsistentMultiTaskLongformerModel, self).__init__()
         
         self.longformer = LongformerModel.from_pretrained('allenai/longformer-base-4096')
         
@@ -260,20 +260,52 @@ def consistency_loss(century_logits, decade_logits):
     
     return penalty
 
+def timeline_loss(century_logits, decade_logits, century_labels, decade_labels):
+    """
+    Loss function that directly minimizes final rank error.
+    """
+    # Get predicted probabilities
+    century_probs = F.softmax(century_logits, dim=1)  # [batch_size, 5]
+    decade_probs = F.softmax(decade_logits, dim=1)    # [batch_size, 10]
+    
+    # Create expected timeline values for each prediction
+    batch_size = century_logits.size(0)
+    timeline_values = torch.zeros(batch_size, device=century_logits.device)
+    
+    # Create ground truth timeline values
+    gt_timeline = century_labels * 10 + decade_labels
+    
+    # Calculate expected timeline value from separate predictions
+    for c in range(5):
+        for d in range(10):
+            timeline_val = c * 10 + d
+            # Add weighted contribution of this (century,decade) combination
+            weight = century_probs[:, c] * decade_probs[:, d]
+            timeline_values += timeline_val * weight
+            
+    # L1 loss between expected timeline and ground truth
+    return torch.mean(torch.abs(timeline_values - gt_timeline.float()))
+
 def multi_task_loss(century_logits, decade_logits, 
                    century_labels, decade_labels,
-                   century_weight=0.33, decade_weight=0.47, consistency_weight=0.2):
+                   century_weight=0.25, decade_weight=0.30, 
+                   consistency_weight=0.15, timeline_weight=0.30):
     """
-    Multi-task loss function with weights adjusted to reflect class complexity:
-    - Century (5 classes): 33% weight
-    - Decade (10 classes): 47% weight 
-    - Consistency: 20% weight (unchanged)
+    Multi-task loss function with timeline loss component:
+    - Century: 25% weight
+    - Decade: 30% weight
+    - Consistency: 15% weight
+    - Timeline: 30% weight
     """
     century_loss = nn.CrossEntropyLoss()(century_logits, century_labels)
     decade_loss = nn.CrossEntropyLoss()(decade_logits, decade_labels)
     cons_loss = consistency_loss(century_logits, decade_logits)
+    tl_loss = timeline_loss(century_logits, decade_logits, century_labels, decade_labels)
 
-    return century_weight * century_loss + decade_weight * decade_loss + consistency_weight * cons_loss
+    return (century_weight * century_loss + 
+            decade_weight * decade_loss + 
+            consistency_weight * cons_loss + 
+            timeline_weight * tl_loss)
 
 def mean_avg_error(y_true, y_pred):
     return np.mean(np.abs(y_true - y_pred))
@@ -392,7 +424,7 @@ def train_multi_task_model(model, train_loader, val_loader, epochs=10):
             epochs_no_improve = 0
             
             # Save the best model (so far) to disk
-            model_path = os.path.join(model_save_dir, f'best_model_epoch_{epoch+1}__consistent.pt')
+            model_path = os.path.join(model_save_dir, f'best_model_epoch_{epoch+1}_consistent_fr.pt')
             torch.save(best_model_state, model_path)
             
             print(f"Epoch {epoch+1}: New best model saved with validation loss: {val_loss:.4f}, saved to {model_path}")
@@ -414,7 +446,7 @@ def train_multi_task_model(model, train_loader, val_loader, epochs=10):
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
         # Save the final best model
-        final_model_path = os.path.join(model_save_dir, 'best_model_consistent.pt')
+        final_model_path = os.path.join(model_save_dir, 'best_model_consistent_fr.pt')
         torch.save(best_model_state, final_model_path)
         print(f"Restored best model with validation loss: {best_val_loss:.4f}, saved to {final_model_path}")
     
@@ -423,7 +455,7 @@ def train_multi_task_model(model, train_loader, val_loader, epochs=10):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = MultiTaskLongformerModel()
+    model = ConsistentMultiTaskLongformerModel()
     model.to(device)
     
     print("Training multi-task model...")
