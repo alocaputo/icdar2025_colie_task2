@@ -22,8 +22,8 @@ parser.add_argument('--pred_method', type=str, default='argmax',
                     choices=['argmax', 'set_argmax', 'threshold_max', 'threshold_max_norm', 'all'],
                     help='Method for selecting predictions (default: argmax, use "all" for all methods)')
 parser.add_argument('--model_type', type=str, default='multitask', 
-                    choices=['multitask', 'classification'],
-                    help='Type of model to use: multitask (decade as 10 classes) or classification (decade as 43 classes)')
+                    choices=['multitask', 'classification', 'consistent'],
+                    help='Type of model to use: multitask (decade as 10 classes), classification (decade as 43 classes), or consistent (with temporal consistency)')
 parser.add_argument('--model_path', type=str, default='models/task2x/best_model_notf.pt',
                     help='Path to the model file')
 args = parser.parse_args()
@@ -412,6 +412,18 @@ if __name__ == "__main__":
     if args.model_type == 'classification':
         model = MultiTaskClassificationModel()
         output_file_base = './submissions/classification'
+    elif args.model_type == 'consistent':
+        # Import the consistent model from task2x_consistent.py
+        try:
+            from task2x_consistent import MultiTaskLongformerModel as ConsistentModel
+            model = ConsistentModel()
+            output_file_base = './submissions/consistent'
+            print("Loaded consistent model architecture")
+        except ImportError:
+            print("Error: Could not import consistent model. Make sure task2x_consistent.py is in the correct location.")
+            # Fall back to regular multitask model
+            model = MultiTaskLongformerModel()
+            output_file_base = './submissions/multitask'
     else:
         model = MultiTaskLongformerModel()
         output_file_base = './submissions/multitask'
@@ -459,6 +471,28 @@ if __name__ == "__main__":
         print(f"After filtering blacklisted IDs: {len(valid_df)} validation samples")
         
         valid_files = valid_df['file_name'].tolist()
+
+        # =============== NEW =============== 04/04
+        
+        # Filter out files containing 'gutenberg'
+        gutenberg_free_files = []
+        valid_path = './data/Task2/texts/valid'
+        for file_name in valid_files:
+            file_path = os.path.join(valid_path, file_name)
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read().lower()
+                    if 'gutenberg' not in content:
+                        gutenberg_free_files.append(file_name)
+            except Exception as e:
+                print(f"Error reading {file_name}: {e}")
+        
+        print(f"After filtering Gutenberg files: {len(gutenberg_free_files)} validation samples")
+        
+        # Update valid_files list and valid_df
+        valid_files = gutenberg_free_files
+        valid_df = valid_df[valid_df['file_name'].isin(valid_files)]
+        # =============== NEW =============== 04/04
         
         # Create validation dataset
         valid_path = './data/Task2/texts/valid'
@@ -488,9 +522,14 @@ if __name__ == "__main__":
             print("Running conformal prediction for all methods...")
             results_dict, _, _, _ = generate_all_conformal_results(model, test_dataloader, device, thresholds)
             
+            # Extract model filename for the output CSV name
+            model_filename = os.path.basename(args.model_path).replace('.pt', '')
+            
             # Save results for each method to a separate file
             for method, results in results_dict.items():
-                output_file = f"{output_file_base}_conformal_alpha{alpha}_{method}.csv"
+                # Apply constraint: if century is 5, decade should not exceed 3
+                results.loc[results['century_label'] == 5, 'decade_label'] = results.loc[results['century_label'] == 5, 'decade_label'].clip(upper=3)
+                output_file = f"{output_file_base}_{model_filename}_conformal_alpha{alpha}_{method}.csv"
                 results.to_csv(output_file, index=False)
                 print(f"Saved {method} predictions to {output_file}")
             
@@ -500,14 +539,29 @@ if __name__ == "__main__":
             print(f"Running conformal prediction with method: {args.pred_method}...")
             results, _, _, _ = generate_all_conformal_results(model, test_dataloader, device, thresholds)
             
+            # Extract model filename for the output CSV name
+            model_filename = os.path.basename(args.model_path).replace('.pt', '')
+            
+            # Apply constraint: if century is 5, decade should not exceed 3
+            results[args.pred_method].loc[results[args.pred_method]['century_label'] == 5, 'decade_label'] = \
+                results[args.pred_method].loc[results[args.pred_method]['century_label'] == 5, 'decade_label'].clip(upper=3)
+            
             # Save results to a CSV file
-            output_file = f"{output_file_base}_conformal_alpha{alpha}_{args.pred_method}.csv"
+            output_file = f"{output_file_base}_{model_filename}_conformal_alpha{alpha}_{args.pred_method}.csv"
             results[args.pred_method].to_csv(output_file, index=False)
             print(f"Saved predictions to {output_file}")
         
     else:
         # Run regular inference
         file_ids, century_preds, decade_preds = run_inference(model, test_dataloader, device)
+        
+        # Extract model filename for the output CSV name
+        model_filename = os.path.basename(args.model_path).replace('.pt', '')
+        
+        # Apply constraint: if century is 5, decade should not exceed 3
+        for i in range(len(century_preds)):
+            if century_preds[i] == 5 and decade_preds[i] > 3:
+                decade_preds[i] = 3
         
         # Prepare a single submission file with both predictions
         results = pd.DataFrame({
@@ -516,7 +570,7 @@ if __name__ == "__main__":
             'decade_label': decade_preds
         })
         
-        output_file = f"{output_file_base}_argmax.csv"
+        output_file = f"{output_file_base}_{model_filename}_argmax.csv"
     
     # Save results to a CSV file
     results.to_csv(output_file, index=False)
