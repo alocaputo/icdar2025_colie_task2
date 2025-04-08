@@ -22,8 +22,8 @@ parser.add_argument('--pred_method', type=str, default='argmax',
                     choices=['argmax', 'set_argmax', 'threshold_max', 'threshold_max_norm', 'all'],
                     help='Method for selecting predictions (default: argmax, use "all" for all methods)')
 parser.add_argument('--model_type', type=str, default='multitask', 
-                    choices=['multitask', 'classification', 'consistent'],
-                    help='Type of model to use: multitask (decade as 10 classes), classification (decade as 43 classes), or consistent (with temporal consistency)')
+                    choices=['multitask', 'classification', 'consistent', 'single_head', 'regression'],
+                    help='Type of model to use: multitask (decade as 10 classes), classification (decade as 43 classes), consistent (with temporal consistency), single_head (from task2x_combined), or regression')
 parser.add_argument('--model_path', type=str, default='models/task2x/best_model_notf.pt',
                     help='Path to the model file')
 args = parser.parse_args()
@@ -348,34 +348,65 @@ def run_inference(model, dataloader, device):
     decade_preds = []
     file_ids = []
     
-    # Determine if we're using the classification model
+    # Determine model type
     is_classification_model = isinstance(model, MultiTaskClassificationModel) or \
                              (hasattr(model, 'module') and isinstance(model.module, MultiTaskClassificationModel))
+    
+    # Check if it's a SingleHeadLongformerModel from task2x_combined
+    try:
+        from task2x_combined import SingleHeadLongformerModel
+        is_single_head_model = isinstance(model, SingleHeadLongformerModel) or \
+                              (hasattr(model, 'module') and isinstance(model.module, SingleHeadLongformerModel))
+    except ImportError:
+        is_single_head_model = False
+    
+    # Check if we're using regression model
+    is_regression_model = args.model_type == 'regression'
     
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Running inference"):
             file_id_batch = batch.pop('file_id')
             batch = {k: v.to(device) for k, v in batch.items()}
             
-            century_logits, decade_logits = model(
-                input_ids=batch['input_ids'], 
-                attention_mask=batch['attention_mask']
-            )
-            # Get predicted classes (0-indexed)
-            century_predictions = torch.argmax(century_logits, dim=1)
-            
-            if is_classification_model:
-                # For classification model, extract decade from combined class
-                combined_predictions = torch.argmax(decade_logits, dim=1)
-                # The decade is the remainder when dividing by 10
-                decade_predictions = combined_predictions % 10
+            if is_single_head_model or is_regression_model:
+                # For single head model or regression model, we get a single output
+                decade_prediction = model(
+                    input_ids=batch['input_ids'], 
+                    attention_mask=batch['attention_mask']
+                )
+                
+                if is_regression_model:
+                    # For regression model, the output is a continuous value
+                    # Round to nearest integer and convert to numpy array
+                    absolute_predictions = torch.round(decade_prediction).cpu().numpy()
+                else:
+                    # For classification model, use argmax to get class indices
+                    absolute_predictions = torch.argmax(decade_prediction, dim=1).cpu().numpy()
+                
+                # Convert absolute decade to century and decade
+                century_predictions = (absolute_predictions // 10) + 1  # Add 1 to make it 1-indexed
+                decade_predictions = (absolute_predictions % 10) + 1    # Add 1 to make it 1-indexed
             else:
-                # Standard model with separate decade predictions
-                decade_predictions = torch.argmax(decade_logits, dim=1)
-            
-            # Convert to actual century/decade (1-indexed for century)
-            century_predictions = century_predictions.cpu().numpy() + 1
-            decade_predictions = decade_predictions.cpu().numpy() + 1 
+                # Standard models with separate century and decade heads
+                century_logits, decade_logits = model(
+                    input_ids=batch['input_ids'], 
+                    attention_mask=batch['attention_mask']
+                )
+                # Get predicted classes (0-indexed)
+                century_predictions = torch.argmax(century_logits, dim=1)
+                
+                if is_classification_model:
+                    # For classification model, extract decade from combined class
+                    combined_predictions = torch.argmax(decade_logits, dim=1)
+                    # The decade is the remainder when dividing by 10
+                    decade_predictions = combined_predictions % 10
+                else:
+                    # Standard model with separate decade predictions
+                    decade_predictions = torch.argmax(decade_logits, dim=1)
+                
+                # Convert to actual century/decade (1-indexed for century)
+                century_predictions = century_predictions.cpu().numpy() + 1
+                decade_predictions = decade_predictions.cpu().numpy() + 1 
             
             century_preds.extend(century_predictions)
             decade_preds.extend(decade_predictions)
@@ -421,6 +452,30 @@ if __name__ == "__main__":
             print("Loaded consistent model architecture")
         except ImportError:
             print("Error: Could not import consistent model. Make sure task2x_consistent.py is in the correct location.")
+            # Fall back to regular multitask model
+            model = MultiTaskLongformerModel()
+            output_file_base = './submissions/multitask'
+    elif args.model_type == 'single_head':
+        # Import and use the SingleHeadLongformerModel from task2x_combined.py
+        try:
+            from task2x_combined import SingleHeadLongformerModel
+            model = SingleHeadLongformerModel()
+            output_file_base = './submissions/single_head'
+            print("Loaded single head model architecture")
+        except ImportError:
+            print("Error: Could not import single head model. Make sure task2x_combined.py is in the correct location.")
+            # Fall back to regular multitask model
+            model = MultiTaskLongformerModel()
+            output_file_base = './submissions/multitask'
+    elif args.model_type == 'regression':
+        # Import and use the SingleHeadLongformerModel from task2x_combined_regression.py
+        try:
+            from task2x_combined_regression import SingleHeadLongformerModel
+            model = SingleHeadLongformerModel()
+            output_file_base = './submissions/regression'
+            print("Loaded regression model architecture")
+        except ImportError:
+            print("Error: Could not import regression model. Make sure task2x_combined_regression.py is in the correct location.")
             # Fall back to regular multitask model
             model = MultiTaskLongformerModel()
             output_file_base = './submissions/multitask'

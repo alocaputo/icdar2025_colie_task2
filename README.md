@@ -50,6 +50,14 @@ Simplifies the approach with:
 - Uses standard cross-entropy loss
 - Simpler architecture but the prediction should be more coherent
 
+### 5. Regression Model (`task2x_combined_regression.py`)
+
+A variant of the single-head model that uses regression instead of classification:
+- Longformer base model (with 1536 token context window)
+- Single regression head that directly predicts continuous values for absolute decade
+- MSE loss to minimize squared error between predictions and ground truth
+- Simpler architecture with potentially better generalization for the timeline prediction task
+
 ## Data Preparation
 
 All models use the same data preparation pipeline:
@@ -80,6 +88,7 @@ python task2x_classification.py  # For baseline classification model
 python task2x_consistent.py      # For consistent multi-task model
 python task2x_consistent_fr.py   # For final rank optimized model
 python task2x_combined.py        # For single-head combined model
+python task2x_combined_regression.py  # For regression model
 ```
 
 ## Evaluation
@@ -93,6 +102,9 @@ python test_eval.py --model_type classification --model_path models/task2x/best_
 # Evaluate consistent models
 python test_eval.py --model_type consistent --model_path models/task2x_consistent/best_model_consistent.pt
 
+# Evaluate regression models
+python3 test_eval.py --model_type regression --model_path models/task2x/best_single_head_regression_model.pt
+
 # Use conformal prediction for uncertainty estimation
 python test_eval.py --conformal --alpha 0.1 --pred_method argmax --model_type consistent
 
@@ -102,7 +114,7 @@ python test_eval.py --conformal --alpha 0.1 --pred_method all --model_type consi
 
 ### Evaluation Options
 
-- `--model_type`: Type of model architecture (`multitask`, `classification`, or `consistent`)
+- `--model_type`: Type of model architecture (`multitask`, `classification`, `consistent`, `single_head`, or `regression`)
 - `--model_path`: Path to the saved model checkpoint
 - `--conformal`: Enable conformal prediction for uncertainty estimation
 - `--alpha`: Alpha value for conformal prediction (default: 0.1)
@@ -119,9 +131,10 @@ The evaluation script automatically enforces the temporal constraint that 21st c
 ## Model Selection
 
 - **Classification model**: Baseline approach, best score: 2.69119 (best model)
-- **Consistent model**: Better temporal coherence in predictions: **2.53525** ✅ (in-training)
-- **Final Rank model**: Optimized directly for the evaluation metric: x.xxxxx (in-training)
-- **Combined model**: Simpler architecture, may generalize better: x.xxxxx (in-training)
+- **Consistent model**: Better temporal coherence in predictions: 2.53525 ✅ (epoch 3)
+- **Final Rank model**: Optimized directly for the evaluation metric: 2.54046 (epoch 5)
+- **Combined model**: Simpler architecture, may generalize better: 2.72107 (epoch 1)
+- **Combined model (Regression)**: Simpler architecture, with a regression head: **2.49412** ✅
 
 ## Requirements
 
