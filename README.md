@@ -131,10 +131,10 @@ The evaluation script automatically enforces the temporal constraint that 21st c
 ## Model Selection
 
 - **Classification model**: Baseline approach, best score: 2.69119 (best model)
-- **Consistent model**: Better temporal coherence in predictions: 2.53525 ✅ (epoch 3)
+- **Consistent model**: Better temporal coherence in predictions: 2.53525 (epoch 3)
 - **Final Rank model**: Optimized directly for the evaluation metric: 2.54046 (epoch 5)
 - **Combined model**: Simpler architecture, may generalize better: 2.72107 (epoch 1)
-- **Combined model (Regression)**: Simpler architecture, with a regression head: **2.49412** ✅
+- **Combined model (Regression)** ✅: Simpler architecture, with a regression head: **2.39961** [floor] **2.49412** [round] (epoch 4)
 
 ## Requirements
 
