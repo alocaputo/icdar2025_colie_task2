@@ -201,7 +201,7 @@ class SingleHeadLongformerModel(nn.Module):
         
         self.longformer = LongformerModel.from_pretrained('allenai/longformer-base-4096')
         
-        # Regression head - outputs a single continuous value
+        # Regression head
         self.decade_regressor = nn.Sequential(
             nn.Linear(self.longformer.config.hidden_size, 512),
             nn.ReLU(),
