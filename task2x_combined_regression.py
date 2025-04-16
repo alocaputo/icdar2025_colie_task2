@@ -261,7 +261,7 @@ def evaluate_single_head(model, dataloader):
     return average_loss, mae, mse
 
 def train_single_head_model(model, train_loader, val_loader, epochs=10):
-    model_save_dir = 'models/task2x/'
+    model_save_dir = 'new_models/task2x/'
     os.makedirs(model_save_dir, exist_ok=True)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)

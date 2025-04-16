@@ -33,6 +33,23 @@ valid_files = os.listdir(valid_path)
 
 print(f"Train: {len(train_files)}, Test: {len(valid_files)}")
 
+## Task 2.1
+
+train21 = pd.read_csv('./data/Task2/task2.1/train.csv')
+valid21 = pd.read_csv('./data/Task2/task2.1/valid.csv')
+
+train21.rename(columns={'label': 'century'}, inplace=True)
+train21['file_name'] = train21['id']
+train21['id'] = train21.id.str.replace('train_text', '').str.replace('.txt', '').astype(int)
+train21.set_index('id', inplace=True)
+
+valid21.rename(columns={'label': 'century'}, inplace=True)
+valid21['file_name'] = valid21['id']
+valid21['id'] = valid21.id.str.replace('valid_text', '').str.replace('.txt', '').astype(int)
+valid21.set_index('id', inplace=True)
+
+## Task 2.2
+
 train22 = pd.read_csv('./data/Task2/task2.2/train.csv')
 valid22 = pd.read_csv('./data/Task2/task2.2/valid.csv')
 
@@ -166,7 +183,7 @@ model_century_classifier.load_state_dict(torch.load(centuy_model_path))
 model_century_classifier.to(device)
 
 class DecadeClassifier(nn.Module):
-    def __init__(self, century_model, num_decades=10):
+    def __init__(self, century_model, num_decades=10, century_weight=0.5):
         super(DecadeClassifier, self).__init__()
         # Get the pretrained longformer from the century classifier
         self.bert = century_model.bert
@@ -182,6 +199,9 @@ class DecadeClassifier(nn.Module):
         
         # Add a connection from century prediction to decade prediction
         self.century_to_decade = nn.Linear(5, num_decades)
+
+        self.century_weight = nn.Parameter(torch.tensor(century_weight))
+
         
     def forward(self, input_ids, attention_mask, century_logits=None, token_type_ids=None):
         outputs = self.bert(input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
@@ -192,7 +212,8 @@ class DecadeClassifier(nn.Module):
         
         if century_logits is not None:
             century_contribution = self.century_to_decade(century_logits)
-            decade_logits = decade_logits + century_contribution
+            # decade_logits = decade_logits + century_contribution       
+            decade_logits = decade_logits + self.century_weight * century_contribution
             
         return decade_logits
     

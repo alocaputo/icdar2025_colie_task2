@@ -26,6 +26,9 @@ parser.add_argument('--model_type', type=str, default='multitask',
                     help='Type of model to use: multitask (decade as 10 classes), classification (decade as 43 classes), consistent (with temporal consistency), single_head (from task2x_combined), or regression')
 parser.add_argument('--model_path', type=str, default='models/task2x/best_model_notf.pt',
                     help='Path to the model file')
+parser.add_argument('--rounding', type=str, default='round', 
+                    choices=['round', 'floor'],
+                    help='Method for converting regression output to integer (default: round)')
 args = parser.parse_args()
 
 class MultiTaskLongformerModel(nn.Module):
@@ -377,8 +380,11 @@ def run_inference(model, dataloader, device):
                 
                 if is_regression_model:
                     # For regression model, the output is a continuous value
-                    # Round to nearest integer and convert to numpy array
-                    absolute_predictions = torch.round(decade_prediction).cpu().numpy()
+                    # Convert to integer based on rounding method
+                    if args.rounding == 'round':
+                        absolute_predictions = torch.round(decade_prediction).cpu().numpy()
+                    else:  # floor
+                        absolute_predictions = torch.floor(decade_prediction).cpu().numpy()
                 else:
                     # For classification model, use argmax to get class indices
                     absolute_predictions = torch.argmax(decade_prediction, dim=1).cpu().numpy()
@@ -625,7 +631,11 @@ if __name__ == "__main__":
             'decade_label': decade_preds
         })
         
-        output_file = f"{output_file_base}_{model_filename}_argmax.csv"
+        # Include rounding method in filename for regression models
+        if args.model_type == 'regression':
+            output_file = f"{output_file_base}_{model_filename}_{args.rounding}.csv"
+        else:
+            output_file = f"{output_file_base}_{model_filename}_argmax.csv"
     
     # Save results to a CSV file
     results.to_csv(output_file, index=False)
