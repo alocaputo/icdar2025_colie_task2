@@ -25,7 +25,7 @@ if torch.cuda.is_available():
     torch.backends.cudnn.benchmark = False
 
 # Load data
-texts_path = './data/Task2/texts'
+texts_path = './old_data/Task2/texts'
 
 train_path = os.path.join(texts_path, 'train')
 valid_path = os.path.join(texts_path, 'valid')
@@ -36,8 +36,8 @@ valid_files = os.listdir(valid_path)
 print(f"Train: {len(train_files)}, Test: {len(valid_files)}")
 
 # Task 2.1
-train21 = pd.read_csv('./data/Task2/task2.1/train.csv')
-valid21 = pd.read_csv('./data/Task2/task2.1/valid.csv')
+train21 = pd.read_csv('./old_data/Task2/task2.1/train.csv')
+valid21 = pd.read_csv('./old_data/Task2/task2.1/valid.csv')
 
 train21.rename(columns={'label': 'century'}, inplace=True)
 train21['file_name'] = train21['id']
@@ -50,8 +50,8 @@ valid21['id'] = valid21.id.str.replace('valid_text', '').str.replace('.txt', '')
 valid21.set_index('id', inplace=True)
 
 # Task 2.2
-train22 = pd.read_csv('./data/Task2/task2.2/train.csv')
-valid22 = pd.read_csv('./data/Task2/task2.2/valid.csv')
+train22 = pd.read_csv('./old_data/Task2/task2.2/train.csv')
+valid22 = pd.read_csv('./old_data/Task2/task2.2/valid.csv')
 
 train22.rename(columns={'label': 'century'}, inplace=True)
 train22['file_name'] = train22['id']

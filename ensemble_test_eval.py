@@ -11,10 +11,8 @@ import argparse
 import pickle
 import glob
 
-# Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Add argument parser - simplified to only essential arguments
 parser = argparse.ArgumentParser(description='Evaluate ensemble models for ICDAR 2025')
 parser.add_argument('--model_path', type=str, default='models/',
                     help='Path to the directory containing model files')
@@ -123,11 +121,11 @@ def find_best_ensemble_config():
     print("Computing best ensemble configuration...")
     
     # Load validation data
-    texts_path = './data/Task2/texts'
+    texts_path = './old_data/Task2/texts'
     valid_path = os.path.join(texts_path, 'valid')
     
-    valid21 = pd.read_csv('./data/Task2/task2.1/valid.csv')
-    valid22 = pd.read_csv('./data/Task2/task2.2/valid.csv')
+    valid21 = pd.read_csv('./old_data/Task2/task2.1/valid.csv')
+    valid22 = pd.read_csv('./old_data/Task2/task2.2/valid.csv')
     
     valid21.rename(columns={'label': 'century'}, inplace=True)
     valid21['file_name'] = valid21['id']
@@ -155,7 +153,7 @@ def find_best_ensemble_config():
         century = row.century
         
         try:
-            with open(os.path.join(texts_path, file_name), 'r', encoding='utf-8', errors='ignore') as file:
+            with open(os.path.join(valid_path, file_name), 'r', encoding='utf-8', errors='ignore') as file:
                 text = file.read()
                 
             if 'gutenberg' in text.lower() and 'project' in text.lower():
@@ -171,7 +169,7 @@ def find_best_ensemble_config():
         century = row.century
         
         try:
-            with open(os.path.join(texts_path, file_name), 'r', encoding='utf-8', errors='ignore') as file:
+            with open(os.path.join(valid_path, file_name), 'r', encoding='utf-8', errors='ignore') as file:
                 text = file.read()
                 
             if 'gutenberg' in text.lower() and 'project' in text.lower():
@@ -222,7 +220,7 @@ def find_best_ensemble_config():
             
             return encoding
     
-    valid_dataset = FileBasedSingleTaskDataset(X_valid_21, texts_path, y_valid_21, y_valid_22, tokenizer)
+    valid_dataset = FileBasedSingleTaskDataset(X_valid_21, valid_path, y_valid_21, y_valid_22, tokenizer)
     batch_size = 16 * max(1, torch.cuda.device_count())
     valid_dataloader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False)
     
@@ -258,7 +256,7 @@ def find_best_ensemble_config():
         
         with torch.no_grad():
             for batch in tqdm(valid_dataloader, desc=f"Evaluating {model_info['name']}"):
-                batch = {k: v.to(device) for k, v in batch.items() if k != 'decade_labels'}
+                batch = {k: v.to(device) for k, v in batch.items()}
                 decade_labels = batch.pop('decade_labels').float().to(device)
                 
                 predictions = model(
@@ -364,7 +362,7 @@ if __name__ == "__main__":
     models = []
     
     model_class = SingleHeadLongformerModel
-    output_file_base = './new_submissions/regression_ensemble'
+    output_file_base = './test_submissions/regression_ensemble'
     print("Loaded regression model architecture")
     
     # Load all models in the ensemble
@@ -385,7 +383,7 @@ if __name__ == "__main__":
         print(f"Loaded model: {model_file}")
 
 
-    for ensemble_type in ['average', 'weighted']:
+    for ensemble_type in ['weighted']: #['average', 'weighted']:
         print(f"\nRunning {ensemble_type} ensemble...")
         
         # Set weights based on ensemble type
