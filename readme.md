@@ -148,7 +148,7 @@ If you use this work in your research, please cite:
 ```bibtex
 @inproceedings{UniUD-DUTH-AUEB2025icdar,
   title={xxx},
-  author={Locaputo, A., Paparrigopoulou, A. and Platanou, P.},
+  author={Locaputo, A. and Paparrigopoulou, A. and Platanou, P.},
   booktitle={xxx},
   year={2025}
 }
